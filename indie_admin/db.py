@@ -85,6 +85,24 @@ CREATE TABLE IF NOT EXISTS promos (
 );
 """
 
+# Columns added after the first release; added to older databases on startup.
+MIGRATIONS = {
+    "songs": [
+        ("duration", "TEXT DEFAULT ''"),
+        ("work_content", "TEXT DEFAULT 'Music and Lyrics'"),
+        ("language", "TEXT DEFAULT 'English'"),
+        ("alt_titles", "TEXT DEFAULT ''"),
+        ("genre_type", "TEXT DEFAULT 'All Other Genres'"),
+        ("has_samples", "INTEGER DEFAULT 0"),
+        ("iswc", "TEXT DEFAULT ''"),
+        ("bmi_status", "TEXT DEFAULT 'Not registered'"),
+        ("bmi_work_no", "TEXT DEFAULT ''"),
+        ("bmi_date", "TEXT DEFAULT ''"),
+        ("mlc_status", "TEXT DEFAULT 'Not registered'"),
+        ("sx_status", "TEXT DEFAULT 'Not registered'"),
+    ],
+}
+
 # Whitelisted writable columns per table. Anything else in a request is ignored.
 TABLES = {
     "collaborators": ["name", "role", "email", "phone", "pro", "ipi",
@@ -93,7 +111,10 @@ TABLES = {
     "releases": ["title", "artist", "kind", "release_date", "status",
                  "distributor", "upc", "notes"],
     "checklist": ["release_id", "task", "due_date", "done", "sort"],
-    "songs": ["release_id", "title", "isrc", "date_written", "studio", "notes"],
+    "songs": ["release_id", "title", "isrc", "date_written", "studio", "notes",
+              "duration", "work_content", "language", "alt_titles", "genre_type",
+              "has_samples", "iswc", "bmi_status", "bmi_work_no", "bmi_date",
+              "mlc_status", "sx_status"],
     "splits": ["song_id", "collaborator_id", "name", "role", "writer_pct",
                "publisher", "pub_pct", "master_pct", "pro", "ipi", "signed"],
     "promos": ["release_id", "outlet", "kind", "contact", "email", "status",
@@ -171,6 +192,13 @@ class Store:
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.executescript(SCHEMA)
+        for table, cols in MIGRATIONS.items():
+            have = {r["name"] for r in
+                    self.conn.execute(f"PRAGMA table_info({table})")}
+            for name, decl in cols:
+                if name not in have:
+                    self.conn.execute(
+                        f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
         self.conn.commit()
 
     # ---- generic CRUD -------------------------------------------------
@@ -316,7 +344,12 @@ class Store:
                 "GROUP BY s.id HAVING COUNT(sp.id) = 0 "
                 "OR ABS(COALESCE(SUM(sp.writer_pct),0) - 100) > 0.01 "
                 "OR COALESCE(SUM(sp.signed),0) < COUNT(sp.id) ORDER BY s.title")]
+            bmi = [dict(r) for r in q(
+                "SELECT id, title, bmi_status FROM songs "
+                "WHERE bmi_status != 'Registered' ORDER BY "
+                "CASE bmi_status WHEN 'Submitted' THEN 1 ELSE 0 END, title")]
         return {"today": today, "releases": releases, "tasks": tasks,
+                "bmi_todo": bmi,
                 "follow_ups": follow_ups, "split_issues": splits}
 
     # ---- backup --------------------------------------------------------

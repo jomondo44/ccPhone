@@ -51,6 +51,9 @@ const OPT = {
   pro: ["", "ASCAP", "BMI", "SESAC", "GMR", "SOCAN", "PRS", "APRA AMCOS", "GEMA", "SACEM", "Other", "None"],
   method: ["Call", "Text", "Email", "DM", "In person", "Session", "Other"],
   promoKind: ["Playlist", "Blog", "Radio", "Podcast", "Press", "Influencer", "Ad", "Live session", "Other"],
+  regStatus: ["Not registered", "Submitted", "Registered", "Not needed"],
+  workContent: ["Music and Lyrics", "Music Only", "Lyrics Only"],
+  genreType: ["All Other Genres", "Classical"],
   promoStatus: ["To pitch", "Pitched", "Followed up", "Accepted", "Published", "Declined", "No reply"],
 };
 
@@ -71,6 +74,17 @@ const SPECS = {
     ["isrc", "ISRC", "text"],
     ["date_written", "Date written", "date"],
     ["studio", "Studio / location", "text"],
+    ["duration", "Duration (m:ss)", "text"],
+    ["work_content", "Work content", "select", { options: OPT.workContent }],
+    ["language", "Language", "text"],
+    ["alt_titles", "Alternate titles", "text"],
+    ["genre_type", "BMI work type", "select", { options: OPT.genreType }],
+    ["has_samples", "Contains samples or medleys", "check"],
+    ["iswc", "ISWC", "text"],
+    ["bmi_status", "BMI registration", "select", { options: OPT.regStatus }],
+    ["bmi_work_no", "BMI work #", "text"],
+    ["mlc_status", "The MLC registration", "select", { options: OPT.regStatus }],
+    ["sx_status", "SoundExchange registration", "select", { options: OPT.regStatus }],
     ["notes", "Notes", "textarea"],
   ]},
   splits: { name: "Split", fields: [
@@ -230,9 +244,9 @@ $("#add").onclick = () => addAction && addAction();
 const routes = {
   home: viewHome, releases: viewReleases, release: viewRelease,
   songs: viewSongs, song: viewSong, people: viewPeople, person: viewPerson,
-  promo: viewPromo,
+  promo: viewPromo, bmi: viewBmiSheet,
 };
-const tabOf = { release: "releases", song: "songs", person: "people" };
+const tabOf = { release: "releases", song: "songs", person: "people", bmi: "songs" };
 
 async function render() {
   const [, name = "home", id] = location.hash.split("/");
@@ -264,6 +278,23 @@ function dueChip(d, done = false) {
     : n < 0 ? `${-n}d late` : n <= 60 ? `in ${n}d` : `in ${Math.round(n / 7)}w`;
   return `<span class="chip ${cls}">${txt}</span>`;
 }
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); }
+  catch {
+    const t = document.createElement("textarea");
+    t.value = text; document.body.appendChild(t); t.select();
+    document.execCommand("copy"); t.remove();
+  }
+  toast("Copied: " + (text.length > 30 ? text.slice(0, 30) + "…" : text));
+}
+view.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-copy]");
+  if (b) copyText(b.dataset.copy);
+});
+const BMI_URL = "https://ols.bmi.com/";
+const regChip = (label, st) => `<span class="chip ${st === "Registered" || st === "Not needed" ? "ok"
+  : st === "Submitted" ? "warn" : "bad"}">${label}: ${esc(st || "Not registered")}</span>`;
+
 const statusCls = (s) => ({
   Released: "ok", Accepted: "ok", Published: "ok", Declined: "bad", "No reply": "bad",
   "On hold": "warn", "Followed up": "warn", Pitched: "warn",
@@ -310,6 +341,13 @@ async function viewHome() {
           Math.abs(s.writer_total - 100) > 0.01 ? `Writer shares total ${pct(s.writer_total)}` :
           `${s.n - s.signed} unsigned`}</div></div><span class="chip warn">fix</span></li>`).join("")}</ul>`
         : `<p class="empty">All split sheets add up and are signed.</p>`}
+    </div>
+    <div class="card"><h2>Not registered with BMI</h2>
+      ${d.bmi_todo.length ? `<ul class="list">${d.bmi_todo.slice(0, 8).map((s) => `
+        <li class="row-link" data-go="#/bmi/${s.id}"><div class="grow">${esc(s.title)}</div>
+        ${regChip("BMI", s.bmi_status)}</li>`).join("")}</ul>
+        ${d.bmi_todo.length > 8 ? `<p class="muted">+${d.bmi_todo.length - 8} more on the Splits tab</p>` : ""}`
+        : `<p class="empty">Every song is registered with BMI.</p>`}
     </div>
     <div class="card"><h2>Backup & export</h2>
       <p class="muted">Everything is stored on this phone only. Back up before switching phones.</p>
@@ -438,7 +476,7 @@ async function viewSongs() {
     const s = await openForm("songs");
     if (s && s.id) go(`#/song/${s.id}`);
   };
-  shell("Split sheets", { add });
+  shell("Songs & splits", { add });
   const [songs, splits, releases] = await Promise.all([list("songs"), list("splits"), list("releases")]);
   const relName = Object.fromEntries(releases.map((r) => [r.id, r.title]));
   view.innerHTML = songs.length ? `<div class="card"><ul class="list">${songs.map((s) => {
@@ -447,12 +485,91 @@ async function viewSongs() {
     const signed = rows.filter((x) => x.signed).length;
     const ok = rows.length && Math.abs(total - 100) < 0.01;
     return `<li class="row-link" data-go="#/song/${s.id}"><div class="grow"><div><b>${esc(s.title)}</b></div>
-      <div class="sub">${rows.length} writer${rows.length === 1 ? "" : "s"} · ${signed}/${rows.length} signed${s.release_id && relName[s.release_id] ? " · " + esc(relName[s.release_id]) : ""}</div></div>
+      <div class="sub">${rows.length} writer${rows.length === 1 ? "" : "s"} · ${signed}/${rows.length} signed${s.release_id && relName[s.release_id] ? " · " + esc(relName[s.release_id]) : ""}</div>
+      <div>${regChip("BMI", s.bmi_status)}</div></div>
       <span class="chip ${ok ? (signed === rows.length ? "ok" : "warn") : "bad"}">${pct(total)}</span></li>`;
   }).join("")}</ul></div>`
     : `<div class="card empty">No songs yet.<br><br><button class="btn primary" id="first">+ New split sheet</button>
        <p class="muted">Write down who wrote what the day you write it. Future you will thank you.</p></div>`;
+  view.insertAdjacentHTML("afterbegin", `<div class="card"><h2>BMI catalog</h2>
+    <p class="muted">On BMI Online Services open <b>Works Catalog</b>, tap <b>CSV Full Catalog</b>, then pick that file here.
+    Songs are matched by BMI work # or title and marked registered.</p>
+    <label class="btn small primary">Import BMI CSV<input id="bmiFile" type="file" accept=".csv,text/csv,text/plain" hidden></label>
+    <button class="btn small" id="bmiPaste">Paste CSV text</button>
+    <a class="btn small" href="${BMI_URL}" target="_blank" rel="noopener">Open BMI</a></div>`);
   $("#first")?.addEventListener("click", add);
+  $("#bmiFile").onchange = async (e) => {
+    const f = e.target.files[0];
+    if (f) await bmiImport(await f.text());
+    e.target.value = "";
+  };
+  $("#bmiPaste").onclick = () => {
+    const form = $("#modal-form");
+    form.innerHTML = `<h3>Paste BMI catalog CSV</h3><div class="field">
+      <textarea id="csvText" style="min-height:200px" placeholder="Title,BMI Work#,..."></textarea></div>
+      <div class="actions"><button type="button" class="btn" data-act="x">Cancel</button>
+      <button type="submit" class="btn primary">Preview</button></div>`;
+    const dlg = $("#modal"); dlg.showModal();
+    form.onclick = (e) => { if (e.target.dataset.act === "x") dlg.close(); };
+    form.onsubmit = async (e) => { e.preventDefault(); const t = $("#csvText").value; dlg.close(); await bmiImport(t); };
+  };
+}
+
+async function bmiImport(text) {
+  let res;
+  try { res = await api("bmi/import", { method: "POST", body: { csv: text } }); }
+  catch (err) { return toast(err.message); }
+  const form = $("#modal-form");
+  form.innerHTML = `<h3>BMI import preview</h3>
+    <p>${res.works} works found: <b>${res.add}</b> new, <b>${res.update}</b> to mark registered, ${res.same} already up to date.</p>
+    <ul class="list">${res.plan.map((p) => `<li><div class="grow">${esc(p.title)}
+      <div class="sub">BMI #${esc(p.work_no || "?")}${p.writers ? " · " + p.writers + " writer(s)" : ""}</div></div>
+      <span class="chip ${p.action === "add" ? "warn" : p.action === "update" ? "" : "ok"}">${p.action}</span></li>`).join("")}</ul>
+    <p class="muted">Columns recognised: ${esc(res.columns.join(", "))}</p>
+    <div class="actions"><button type="button" class="btn" data-act="x">Cancel</button>
+    <button type="submit" class="btn primary" ${res.add + res.update ? "" : "disabled"}>Import</button></div>`;
+  const dlg = $("#modal"); dlg.showModal();
+  form.onclick = (e) => { if (e.target.dataset.act === "x") dlg.close(); };
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    await api("bmi/import", { method: "POST", body: { csv: text, apply: true } });
+    dlg.close();
+    toast(`Imported: ${res.add} added, ${res.update} updated`);
+    reload();
+  };
+}
+
+async function viewBmiSheet(id) {
+  const d = await api(`bmi/sheet/${id}`);
+  shell("BMI: " + d.song.title, { back: true });
+  const row = ([k, v]) => {
+    const real = v && !/^\(.*\)$/.test(v);
+    return `<li><div class="grow"><div class="sub">${esc(k)}</div><div>${esc(v)}</div></div>
+      ${real ? `<button class="btn small" data-copy="${esc(v)}">Copy</button>` : ""}</li>`;
+  };
+  view.innerHTML = `
+    <div class="card"><div>${regChip("BMI", d.song.bmi_status)}${d.song.bmi_work_no ? ` <span class="chip">#${esc(d.song.bmi_work_no)}</span>` : ""}</div>
+      <p class="muted">Open BMI in another tab, choose <b>Register New Works</b>, and copy each field across. BMI has no API, so nothing is sent automatically.</p>
+      <a class="btn primary" href="${BMI_URL}" target="_blank" rel="noopener">Open BMI</a>
+      <button class="btn" id="submitted">Mark submitted</button>
+      <a class="btn" href="#/song/${id}">Edit song</a></div>
+    ${d.problems.length ? `<div class="card"><h2>Fix first</h2><ul class="list">${d.problems.map((p) =>
+      `<li class="overdue">${esc(p)}</li>`).join("")}</ul></div>` : ""}
+    ${d.steps.map((st) => `<div class="card"><h2>Step ${esc(st.step)}</h2>
+      ${st.note ? `<p class="muted">${esc(st.note)}</p>` : ""}
+      ${st.fields ? `<ul class="list">${st.fields.map(row).join("")}</ul>` : ""}
+      ${st.writers ? st.writers.map((w) => `<ul class="list" style="margin-bottom:10px">
+        <li><b>${esc(w.name)}</b></li>
+        ${[["Last name", w.last], ["First name", w.first], ["Role", w.role], ["IP Name # (IPI)", w.ipi || "(missing)"],
+           ["Affiliation", w.pro || "(missing)"], ["Writer share", w.share.toFixed(2)],
+           ...(w.publisher ? [["Publisher", w.publisher], ["Publisher share", (+w.pub_share).toFixed(2)]] : [])].map(row).join("")}
+        </ul>`).join("") + `<p class="total">Total writer share: ${st.writers.reduce((a, w) => a + w.share, 0).toFixed(2)}</p>` : ""}
+    </div>`).join("")}`;
+  $("#submitted").onclick = async () => {
+    await update("songs", id, { bmi_status: "Submitted", bmi_date: today() });
+    toast("Marked submitted");
+    reload();
+  };
 }
 
 async function viewSong(id) {
@@ -480,9 +597,16 @@ async function viewSong(id) {
       ${rows.length ? `<a class="btn small" href="/splitsheet/${id}" target="_blank">Printable split sheet</a>
         <button class="btn small" id="share">Share as text</button>` : ""}
     </div>
+    <div class="card"><h2>Registrations</h2>
+      <div>${regChip("BMI", s.bmi_status)} ${regChip("MLC", s.mlc_status)} ${regChip("SoundExchange", s.sx_status)}</div>
+      ${s.bmi_work_no ? `<p class="muted">BMI work #${esc(s.bmi_work_no)}${s.bmi_date ? " · " + fmtDate(s.bmi_date) : ""}</p>` : ""}
+      <a class="btn small primary" href="#/bmi/${id}">BMI copy sheet</a>
+    </div>
     <div class="card"><h2>Song info</h2>
       <dl class="kv">
         ${s.isrc ? `<dt>ISRC</dt><dd>${esc(s.isrc)}</dd>` : ""}
+        ${s.iswc ? `<dt>ISWC</dt><dd>${esc(s.iswc)}</dd>` : ""}
+        ${s.duration ? `<dt>Duration</dt><dd>${esc(s.duration)}</dd>` : ""}
         ${s.date_written ? `<dt>Written</dt><dd>${fmtDate(s.date_written)}</dd>` : ""}
         ${s.studio ? `<dt>Where</dt><dd>${esc(s.studio)}</dd>` : ""}
         ${s.release_id ? `<dt>Release</dt><dd><a href="#/release/${s.release_id}">open release</a></dd>` : ""}

@@ -17,6 +17,14 @@ to-dos.
 - **Promo tracker**: playlists, blogs, radio, podcasts, press. Status
   pipeline (To pitch, Pitched, Followed up, Accepted, Published, Declined),
   auto follow-up reminders one week after pitching, cost and win-rate totals.
+- **BMI registration helper**: BMI has no public API, so the app works
+  alongside its website. *Pull*: on BMI Online Services, open Works Catalog,
+  tap **CSV Full Catalog**, and import that file on the Splits tab. Songs are
+  matched by BMI work # or title, previewed, then marked registered. *Push*:
+  each song's **BMI copy sheet** lists every field of BMI's 5-step New Work
+  form in order with copy buttons (writer shares doubled to BMI's 200% rule
+  when there's no publisher) and flags missing IPI numbers or bad totals
+  first. MLC and SoundExchange status are tracked too.
 - **Home dashboard**: what's due this week, overdue tasks, promo follow-ups
   and split sheets that need fixing.
 - **Your data stays on your phone** in one SQLite file. JSON backup / restore

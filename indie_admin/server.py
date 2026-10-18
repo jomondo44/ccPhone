@@ -15,6 +15,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qsl, urlparse
 
+from . import bmi
 from .db import TABLES, Store, dumps
 
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
@@ -174,6 +175,9 @@ def make_handler(store):
             if parts[0] != "api":
                 return self._error(404, "Not found")
             parts = parts[1:]
+            if len(parts) == 3 and parts[:2] == ["bmi", "sheet"]:
+                sheet = bmi.copy_sheet(store, int(parts[2]))
+                return self._json(sheet) if sheet else self._error(404, "Song not found")
             if parts == ["dashboard"]:
                 return self._json(store.dashboard())
             if parts == ["export"]:
@@ -195,6 +199,10 @@ def make_handler(store):
             return self._error(404, "Not found")
 
         def _api_write(self, method, parts):
+            if method == "POST" and parts == ["bmi", "import"]:
+                body = self._body()
+                return self._json(bmi.import_catalog(
+                    store, str(body.get("csv", "")), bool(body.get("apply"))))
             if method == "POST" and parts == ["import"]:
                 store.import_all(self._body())
                 return self._json({"ok": True})

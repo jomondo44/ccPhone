@@ -133,3 +133,68 @@ class HttpTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BmiTests(unittest.TestCase):
+    def setUp(self):
+        from indie_admin import bmi
+        self.bmi = bmi
+        self.tmp = tempfile.TemporaryDirectory()
+        self.store = Store(os.path.join(self.tmp.name, "b.db"))
+
+    def tearDown(self):
+        self.store.conn.close()
+        self.tmp.cleanup()
+
+    def test_simple_catalog_preview_then_apply(self):
+        self.store.create("songs", {"title": "Blocked Exit"})
+        csv_text = ("Title,Registration Origin,BMI Work#\n"
+                    "BETWEEN THE STARS,Registered,79855214\n"
+                    "BLOCKED EXIT,Registered,79854791\n")
+        res = self.bmi.import_catalog(self.store, csv_text)
+        self.assertEqual((res["add"], res["update"]), (1, 1))
+        self.assertEqual(len(self.store.list("songs")), 1)  # preview wrote nothing
+        self.bmi.import_catalog(self.store, csv_text, apply=True)
+        songs = {s["title"]: s for s in self.store.list("songs")}
+        self.assertEqual(songs["Blocked Exit"]["bmi_work_no"], "79854791")
+        self.assertEqual(songs["Between The Stars"]["bmi_status"], "Registered")
+        again = self.bmi.import_catalog(self.store, csv_text)
+        self.assertEqual(again["same"], 2)
+
+    def test_writer_rows_and_200_percent(self):
+        csv_text = ("﻿Work Title,Work #,ISWC,Writer Name,IPI Name #,Share %\n"
+                    "SONG A,111,T-123,ROBERTS JAMES WALLACE MR,01351262970,100.00\n"
+                    ",,,DOE JANE,0999,100.00\n")
+        self.bmi.import_catalog(self.store, csv_text, apply=True)
+        song = self.store.list("songs")[0]
+        self.assertEqual(song["iswc"], "T-123")
+        splits = self.store.list("splits", {"song_id": song["id"]})
+        self.assertEqual([(s["name"], s["writer_pct"]) for s in splits],
+                         [("James Wallace Roberts", 50), ("Jane Doe", 50)])
+
+    def test_copy_sheet_doubles_shares_without_publisher(self):
+        s = self.store.create("songs", {"title": "X"})
+        self.store.create("splits", {"song_id": s["id"], "name": "James Roberts",
+                                     "writer_pct": 100, "pro": "BMI",
+                                     "ipi": "01351262970", "role": "Songwriter"})
+        sheet = self.bmi.copy_sheet(self.store, s["id"])
+        w = sheet["steps"][2]["writers"][0]
+        self.assertEqual((w["share"], w["role"], w["last"]), (200, "Composer/Author", "Roberts"))
+        self.assertEqual(sheet["problems"], [])
+
+    def test_bad_csv(self):
+        with self.assertRaises(ValueError):
+            self.bmi.parse_catalog("a,b\n1,2\n")
+
+    def test_old_database_is_migrated(self):
+        import sqlite3
+        path = os.path.join(self.tmp.name, "old.db")
+        c = sqlite3.connect(path)
+        c.execute("CREATE TABLE songs (id INTEGER PRIMARY KEY, release_id INTEGER, "
+                  "title TEXT NOT NULL, isrc TEXT DEFAULT '', date_written TEXT DEFAULT '', "
+                  "studio TEXT DEFAULT '', notes TEXT DEFAULT '')")
+        c.execute("INSERT INTO songs (title) VALUES ('Old')")
+        c.commit(); c.close()
+        st = Store(path)
+        self.assertEqual(st.list("songs")[0]["bmi_status"], "Not registered")
+        st.conn.close()
