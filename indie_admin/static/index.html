@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#16131f">
+<title>Indie Admin Lite</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="top">
+  <button id="back" class="icon" aria-label="Back" hidden>&larr;</button>
+  <h1 id="title">Indie Admin Lite</h1>
+  <button id="add" class="icon" aria-label="Add" hidden>+</button>
+</header>
+<main id="view"></main>
+<nav class="tabs">
+  <a href="#/home" data-tab="home"><span>&#9750;</span>Home</a>
+  <a href="#/releases" data-tab="releases"><span>&#9673;</span>Releases</a>
+  <a href="#/songs" data-tab="songs"><span>&#189;</span>Splits</a>
+  <a href="#/people" data-tab="people"><span>&#9786;</span>People</a>
+  <a href="#/promo" data-tab="promo"><span>&#9993;</span>Promo</a>
+</nav>
+<dialog id="modal"><form id="modal-form" method="dialog"></form></dialog>
+<div id="toast" role="status"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
